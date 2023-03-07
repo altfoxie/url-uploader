@@ -82,9 +82,11 @@ impl Bot {
                 }
             }
 
-            // If the message chat is a group, ensure the command sent explicitly to the bot
+            // There is a chance that there are multiple bots listening
+            // to /start commands in a group, so we handle commands
+            // only if they are sent explicitly to this bot.
             if let Chat::Group(_) = msg.chat() {
-                if command.via.is_none() {
+                if command.name == "start" && command.via.is_none() {
                     return Ok(());
                 }
             }
