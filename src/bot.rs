@@ -20,13 +20,18 @@ use crate::command::{parse_command, Command};
 pub struct Bot {
     client: Client,
     me: User,
+    http: reqwest::Client,
 }
 
 impl Bot {
     /// Create a new bot instance.
     pub async fn new(client: Client) -> Result<Arc<Self>> {
         let me = client.get_me().await?;
-        Ok(Arc::new(Self { client, me }))
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
+            .build()?;
+        Ok(Arc::new(Self { client, me, http }))
     }
 
     /// Run the bot.
@@ -152,13 +157,13 @@ impl Bot {
     /// This function will download the file and upload it to Telegram.
     async fn handle_url(&self, msg: Message, url: Url) -> Result<()> {
         info!("Downloading file from {}", url);
-        let response = reqwest::get(url).await?;
+        let response = self.http.get(url).send().await?;
 
         // Get the file name and size
         let length = response.content_length().unwrap_or_default() as usize;
         let name = match response
             .headers()
-            .get("Content-Disposition")
+            .get("content-disposition")
             .and_then(|value| {
                 value
                     .to_str()
@@ -166,6 +171,7 @@ impl Bot {
                     .and_then(|value| {
                         value
                             .split(';')
+                            .map(|value| value.trim())
                             .find(|value| value.starts_with("filename="))
                     })
                     .map(|value| value.trim_start_matches("filename="))
@@ -179,6 +185,7 @@ impl Bot {
                 .unwrap_or("file.bin")
                 .to_string(),
         };
+        info!("File {} ({} bytes)", name, length);
 
         // File is empty
         if length == 0 {
