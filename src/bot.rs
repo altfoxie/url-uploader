@@ -239,13 +239,27 @@ impl Bot {
                         .ok();
                 });
             });
+
+        // Upload the file
+        let start_time = chrono::Utc::now();
         let file = self
             .client
             .upload_stream(&mut stream, length, name.clone())
             .await?;
 
+        // Calculate upload time
+        let elapsed = chrono::Utc::now() - start_time;
+        info!("Uploaded file {} ({} bytes) in {}", name, length, elapsed);
+
         // Send file
-        msg.reply(InputMessage::default().file(file)).await?;
+        msg.reply(
+            InputMessage::html(format!(
+                "🕓 Uploaded in <b>{:.2} secs</b>",
+                elapsed.num_milliseconds() as f64 / 1000.0
+            ))
+            .file(file),
+        )
+        .await?;
 
         // Delete status message
         status.lock().await.delete().await?;
