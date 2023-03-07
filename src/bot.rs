@@ -122,8 +122,14 @@ impl Bot {
     /// It will reply with a welcome message.
     async fn handle_start(&self, msg: Message) -> Result<()> {
         msg.reply(InputMessage::html(
-            "Hi! Drop me a link to a file and I'll upload it for you.\n\
-            <i>In groups you can use the command /upload &lt;url&gt;.</i>",
+            "📁 <b>Hi! Drop me a link to a file and I'll upload it for you.</b>\n\
+            <i>In groups you can use the command /upload &lt;url&gt;.</i>\n\
+            \n\
+            🌟 <b>Features:</b>\n\
+            \u{2022} <a href=\"https://github.com/altfoxie/url-uploader\">Open source</a>\n\
+            \u{2022} Free & fast\n\
+            \u{2022} Uploads files up to 2GB\n\
+            \u{2022} Supports redirects",
         ))
         .await?;
         Ok(())
