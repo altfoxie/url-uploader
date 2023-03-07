@@ -195,20 +195,20 @@ impl Bot {
 
         // File is empty
         if length == 0 {
-            msg.reply("File is empty").await?;
+            msg.reply("⚠️ File is empty").await?;
             return Ok(());
         }
 
         // File is too large
         if length > 2 * 1024 * 1024 * 1024 {
-            msg.reply("File is too large").await?;
+            msg.reply("⚠️ File is too large").await?;
             return Ok(());
         }
 
         // Send status message
         let status = Arc::new(Mutex::new(
             msg.reply(InputMessage::html(format!(
-                "Starting upload of <code>{}</code>...",
+                "🚀 Starting upload of <code>{}</code>...",
                 name
             )))
             .await?,
@@ -229,7 +229,8 @@ impl Bot {
                         .lock()
                         .await
                         .edit(InputMessage::html(format!(
-                            "Uploading <code>{}</code> ({:.2}%)\n - {} / {}",
+                            "⏳ Uploading <code>{}</code> <b>({:.2}%)</b>\n\
+                            <i>{} / {}</i>",
                             name,
                             progress as f64 / length as f64 * 100.0,
                             bytesize::to_string(progress as u64, true),
@@ -254,7 +255,7 @@ impl Bot {
         // Send file
         msg.reply(
             InputMessage::html(format!(
-                "🕓 Uploaded in <b>{:.2} secs</b>",
+                "✅ Uploaded in <b>{:.2} secs</b>",
                 elapsed.num_milliseconds() as f64 / 1000.0
             ))
             .file(file),
