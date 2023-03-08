@@ -1,4 +1,4 @@
-use std::{hash::Hash, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_read_progress::TokioAsyncReadProgressExt;
