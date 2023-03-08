@@ -1,7 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{hash::Hash, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_read_progress::TokioAsyncReadProgressExt;
+use dashmap::DashSet;
 use futures::TryStreamExt;
 use grammers_client::{
     types::{Chat, Message, User},
@@ -9,6 +10,7 @@ use grammers_client::{
 };
 use log::{error, info, warn};
 use reqwest::Url;
+use scopeguard::defer;
 use tokio::sync::Mutex;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
@@ -21,17 +23,22 @@ pub struct Bot {
     client: Client,
     me: User,
     http: reqwest::Client,
+    locks: Arc<DashSet<i64>>,
 }
 
 impl Bot {
     /// Create a new bot instance.
     pub async fn new(client: Client) -> Result<Arc<Self>> {
         let me = client.get_me().await?;
-        let http = reqwest::Client::builder()
+        Ok(Arc::new(Self {
+            client,
+            me,
+            http: reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
-            .build()?;
-        Ok(Arc::new(Self { client, me, http }))
+            .build()?,
+            locks: Arc::new(DashSet::new()),
+        }))
     }
 
     /// Run the bot.
@@ -162,6 +169,21 @@ impl Bot {
     /// Handle a URL.
     /// This function will download the file and upload it to Telegram.
     async fn handle_url(&self, msg: Message, url: Url) -> Result<()> {
+        // Lock the chat to prevent multiple uploads at the same time
+        info!("Locking chat {}", msg.chat().id());
+        let _lock = self.locks.insert(msg.chat().id());
+        if !_lock {
+            msg.reply("✋ Whoa, slow down! There's already an active upload in this chat.")
+                .await?;
+            return Ok(());
+        }
+
+        // Deferred unlock
+        defer! {
+            info!("Unlocking chat {}", msg.chat().id());
+            self.locks.remove(&msg.chat().id());
+        };
+
         info!("Downloading file from {}", url);
         let response = self.http.get(url).send().await?;
 
