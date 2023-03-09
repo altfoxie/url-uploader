@@ -2,15 +2,17 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_read_progress::TokioAsyncReadProgressExt;
-use dashmap::DashSet;
+use dashmap::{DashMap, DashSet};
 use futures::TryStreamExt;
 use grammers_client::{
-    types::{Chat, Message, User},
+    button, reply_markup,
+    types::{CallbackQuery, Chat, Message, User},
     Client, InputMessage, Update,
 };
 use log::{error, info, warn};
 use reqwest::Url;
 use scopeguard::defer;
+use stream_cancel::{Trigger, Valved};
 use tokio::sync::Mutex;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
@@ -24,6 +26,7 @@ pub struct Bot {
     me: User,
     http: reqwest::Client,
     locks: Arc<DashSet<i64>>,
+    triggers: Arc<DashMap<i64, Trigger>>,
 }
 
 impl Bot {
@@ -38,6 +41,7 @@ impl Bot {
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
             .build()?,
             locks: Arc::new(DashSet::new()),
+            triggers: Arc::new(DashMap::new()),
         }))
     }
 
@@ -68,6 +72,7 @@ impl Bot {
         // NOTE: no ; here, so result is returned
         match update {
             Update::NewMessage(msg) => self.handle_message(msg).await,
+            Update::CallbackQuery(query) => self.handle_callback(query).await,
             _ => Ok(()),
         }
     }
@@ -227,37 +232,58 @@ impl Bot {
             return Ok(());
         }
 
+        // Reply markup buttons
+        let reply_markup = Arc::new(reply_markup::inline(vec![vec![button::inline(
+            "⛔ Cancel",
+            "cancel",
+        )]]));
+
         // Send status message
         let status = Arc::new(Mutex::new(
-            msg.reply(InputMessage::html(format!(
-                "🚀 Starting upload of <code>{}</code>...",
-                name
-            )))
+            msg.reply(
+                InputMessage::html(format!("🚀 Starting upload of <code>{}</code>...", name))
+                    .reply_markup(reply_markup.clone().as_ref()),
+            )
             .await?,
         ));
 
-        let mut stream = response
-            .bytes_stream()
-            // TODO: idk why this is needed
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+        // Wrap the response stream in a valved stream
+        let (trigger, stream) = Valved::new(
+            response
+                .bytes_stream()
+                // TODO: idk why this is needed
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)),
+        );
+        self.triggers.insert(msg.chat().id(), trigger);
+
+        // Deferred trigger removal
+        defer! {
+            self.triggers.remove(&msg.chat().id());
+        };
+
+        let mut stream = stream
             .into_async_read()
             .compat()
             // Report progress every 3 seconds
             .report_progress(Duration::from_secs(3), |progress| {
                 let status = status.clone();
                 let name = name.clone();
+                let reply_markup = reply_markup.clone();
                 tokio::spawn(async move {
                     status
                         .lock()
                         .await
-                        .edit(InputMessage::html(format!(
-                            "⏳ Uploading <code>{}</code> <b>({:.2}%)</b>\n\
+                        .edit(
+                            InputMessage::html(format!(
+                                "⏳ Uploading <code>{}</code> <b>({:.2}%)</b>\n\
                             <i>{} / {}</i>",
-                            name,
-                            progress as f64 / length as f64 * 100.0,
-                            bytesize::to_string(progress as u64, true),
-                            bytesize::to_string(length as u64, true),
-                        )))
+                                name,
+                                progress as f64 / length as f64 * 100.0,
+                                bytesize::to_string(progress as u64, true),
+                                bytesize::to_string(length as u64, true),
+                            ))
+                            .reply_markup(reply_markup.as_ref()),
+                        )
                         .await
                         .ok();
                 });
@@ -287,6 +313,31 @@ impl Bot {
         // Delete status message
         status.lock().await.delete().await?;
 
+        Ok(())
+    }
+
+    /// Callback query handler.
+    async fn handle_callback(&self, query: CallbackQuery) -> Result<()> {
+        match query.data() {
+            b"cancel" => self.handle_cancel(query).await,
+            _ => Ok(()),
+        }
+    }
+
+    /// Handle the cancel button.
+    async fn handle_cancel(&self, query: CallbackQuery) -> Result<()> {
+        if let Some((chat_id, trigger)) = self.triggers.remove(&query.chat().id()) {
+            info!("Cancelling upload in chat {}", chat_id);
+            drop(trigger);
+
+            query
+                .load_message()
+                .await?
+                .edit("⛔ Upload cancelled")
+                .await?;
+
+            query.answer().send().await?;
+        }
         Ok(())
     }
 }
