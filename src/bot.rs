@@ -232,6 +232,20 @@ impl Bot {
             return Ok(());
         }
 
+        // Wrap the response stream in a valved stream
+        let (trigger, stream) = Valved::new(
+            response
+                .bytes_stream()
+                // TODO: idk why this is needed
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)),
+        );
+        self.triggers.insert(msg.chat().id(), trigger);
+
+        // Deferred trigger removal
+        defer! {
+            self.triggers.remove(&msg.chat().id());
+        };
+
         // Reply markup buttons
         let reply_markup = Arc::new(reply_markup::inline(vec![vec![button::inline(
             "⛔ Cancel",
@@ -246,20 +260,6 @@ impl Bot {
             )
             .await?,
         ));
-
-        // Wrap the response stream in a valved stream
-        let (trigger, stream) = Valved::new(
-            response
-                .bytes_stream()
-                // TODO: idk why this is needed
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)),
-        );
-        self.triggers.insert(msg.chat().id(), trigger);
-
-        // Deferred trigger removal
-        defer! {
-            self.triggers.remove(&msg.chat().id());
-        };
 
         let mut stream = stream
             .into_async_read()
