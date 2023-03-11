@@ -121,9 +121,11 @@ impl Bot {
             }
         }
 
-        // If the message is not a command, try to parse it as a URL
-        if let Ok(url) = Url::parse(msg.text()) {
-            return self.handle_url(msg, url).await;
+        if let Chat::User(_) = msg.chat() {
+            // If the message is not a command, try to parse it as a URL
+            if let Ok(url) = Url::parse(msg.text()) {
+                return self.handle_url(msg, url).await;
+            }
         }
 
         Ok(())
