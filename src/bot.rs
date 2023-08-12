@@ -217,7 +217,21 @@ impl Bot {
                 .url()
                 .path_segments()
                 .and_then(|segments| segments.last())
-                .unwrap_or("file.bin")
+                .and_then(|name| {
+                    if name.contains('.') {
+                        Some(name.to_string())
+                    } else {
+                        // guess the extension from the content type
+                        response
+                            .headers()
+                            .get("content-type")
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(|value| mime_guess::get_mime_extensions_str(value))
+                            .and_then(|ext| ext.first())
+                            .map(|ext| format!("{}.{}", name, ext))
+                    }
+                })
+                .unwrap_or("file.bin".to_string())
                 .to_string(),
         };
         info!("File {} ({} bytes)", name, length);
@@ -238,7 +252,6 @@ impl Bot {
         let (trigger, stream) = Valved::new(
             response
                 .bytes_stream()
-                // TODO: idk why this is needed
                 .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)),
         );
         self.triggers.insert(msg.chat().id(), trigger);
@@ -303,14 +316,16 @@ impl Bot {
         info!("Uploaded file {} ({} bytes) in {}", name, length, elapsed);
 
         // Send file
-        msg.reply(
-            InputMessage::html(format!(
-                "✅ Uploaded in <b>{:.2} secs</b>",
-                elapsed.num_milliseconds() as f64 / 1000.0
-            ))
-            .file(file),
-        )
-        .await?;
+        let mut input_msg = InputMessage::html(format!(
+            "✅ Uploaded in <b>{:.2} secs</b>",
+            elapsed.num_milliseconds() as f64 / 1000.0
+        ));
+        if name.to_lowercase().ends_with(".mp4") {
+            input_msg = input_msg.document(file);
+        } else {
+            input_msg = input_msg.file(file);
+        }
+        msg.reply(input_msg).await?;
 
         // Delete status message
         status.lock().await.delete().await?;

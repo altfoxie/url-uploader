@@ -1770,6 +1770,7 @@ dependencies = [
  "grammers-client",
  "grammers-session",
  "log",
+ "mime_guess",
  "reqwest",
  "scopeguard",
  "simplelog",
