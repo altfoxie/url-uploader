@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     // Authorize as a bot if needed
     if !client.is_authorized().await? {
         info!("Not authorized, signing in");
-        client.bot_sign_in(&bot_token, api_id, &api_hash).await?;
+        client.bot_sign_in(&bot_token).await?;
     }
 
     // Save the session to a file
