@@ -320,7 +320,7 @@ impl Bot {
 
         // Send file
         let mut input_msg = InputMessage::html(format!(
-            "✅ Uploaded in <b>{:.2} secs</b>",
+            "Uploaded in <b>{:.2} secs</b>",
             elapsed.num_milliseconds() as f64 / 1000.0
         ));
         if name.to_lowercase().ends_with(".mp4") {
