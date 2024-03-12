@@ -234,6 +234,9 @@ impl Bot {
                 .unwrap_or("file.bin".to_string())
                 .to_string(),
         };
+        let name = percent_encoding::percent_decode_str(&name)
+            .decode_utf8()?
+            .to_string();
         info!("File {} ({} bytes)", name, length);
 
         // File is empty
