@@ -226,7 +226,7 @@ impl Bot {
                             .headers()
                             .get("content-type")
                             .and_then(|value| value.to_str().ok())
-                            .and_then(|value| mime_guess::get_mime_extensions_str(value))
+                            .and_then(mime_guess::get_mime_extensions_str)
                             .and_then(|ext| ext.first())
                             .map(|ext| format!("{}.{}", name, ext))
                     }
@@ -335,10 +335,10 @@ impl Bot {
             "Uploaded in <b>{:.2} secs</b>",
             elapsed.num_milliseconds() as f64 / 1000.0
         ));
-        input_msg = input_msg.file(file);
+        input_msg = input_msg.document(file);
         if is_video {
             input_msg = input_msg.attribute(grammers_client::types::Attribute::Video {
-                supports_streaming: true,
+                supports_streaming: false,
                 duration: Duration::ZERO,
                 w: 0,
                 h: 0,
