@@ -237,7 +237,19 @@ impl Bot {
         let name = percent_encoding::percent_decode_str(&name)
             .decode_utf8()?
             .to_string();
-        info!("File {} ({} bytes)", name, length);
+        let is_video = response
+            .headers()
+            .get("content-type")
+            .map(|value| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| value.starts_with("video/mp4"))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+            || name.to_lowercase().ends_with(".mp4");
+        info!("File {} ({} bytes, video: {})", name, length, is_video);
 
         // File is empty
         if length == 0 {
@@ -323,10 +335,15 @@ impl Bot {
             "Uploaded in <b>{:.2} secs</b>",
             elapsed.num_milliseconds() as f64 / 1000.0
         ));
-        if name.to_lowercase().ends_with(".mp4") {
-            input_msg = input_msg.document(file);
-        } else {
-            input_msg = input_msg.file(file);
+        input_msg = input_msg.file(file);
+        if is_video {
+            input_msg = input_msg.attribute(grammers_client::types::Attribute::Video {
+                supports_streaming: true,
+                duration: Duration::ZERO,
+                w: 0,
+                h: 0,
+                round_message: false,
+            });
         }
         msg.reply(input_msg).await?;
 
