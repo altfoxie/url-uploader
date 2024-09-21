@@ -26,6 +26,7 @@ pub struct Bot {
     me: User,
     http: reqwest::Client,
     locks: Arc<DashSet<i64>>,
+    started_by: Arc<DashMap<i64, i64>>,
     triggers: Arc<DashMap<i64, Trigger>>,
 }
 
@@ -41,6 +42,7 @@ impl Bot {
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
             .build()?,
             locks: Arc::new(DashSet::new()),
+            started_by: Arc::new(DashMap::new()),
             triggers: Arc::new(DashMap::new()),
         }))
     }
@@ -176,6 +178,11 @@ impl Bot {
     /// Handle a URL.
     /// This function will download the file and upload it to Telegram.
     async fn handle_url(&self, msg: Message, url: Url) -> Result<()> {
+        let sender = match msg.sender() {
+            Some(sender) => sender,
+            None => return Ok(()),
+        };
+
         // Lock the chat to prevent multiple uploads at the same time
         info!("Locking chat {}", msg.chat().id());
         let _lock = self.locks.insert(msg.chat().id());
@@ -184,11 +191,13 @@ impl Bot {
                 .await?;
             return Ok(());
         }
+        self.started_by.insert(msg.chat().id(), sender.id());
 
         // Deferred unlock
         defer! {
             info!("Unlocking chat {}", msg.chat().id());
             self.locks.remove(&msg.chat().id());
+            self.started_by.remove(&msg.chat().id());
         };
 
         info!("Downloading file from {}", url);
@@ -363,9 +372,32 @@ impl Bot {
 
     /// Handle the cancel button.
     async fn handle_cancel(&self, query: CallbackQuery) -> Result<()> {
+        let started_by_user_id = match self.started_by.get(&query.chat().id()) {
+            Some(id) => *id,
+            None => return Ok(()),
+        };
+
+        if started_by_user_id != query.sender().id() {
+            info!(
+                "Some genius with ID {} tried to cancel another user's upload in chat {}",
+                query.sender().id(),
+                query.chat().id()
+            );
+
+            query
+                .answer()
+                .alert("⚠️ You can't cancel another user's upload")
+                .cache_time(Duration::ZERO)
+                .send()
+                .await?;
+
+            return Ok(());
+        }
+
         if let Some((chat_id, trigger)) = self.triggers.remove(&query.chat().id()) {
             info!("Cancelling upload in chat {}", chat_id);
             drop(trigger);
+            self.started_by.remove(&chat_id);
 
             query
                 .load_message()
