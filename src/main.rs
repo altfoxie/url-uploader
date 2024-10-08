@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bot::Bot;
 use dotenv::dotenv;
 use grammers_client::{Client, Config, InitParams};
@@ -20,15 +20,20 @@ async fn main() -> Result<()> {
     // Initialize logging
     TermLogger::init(
         log::LevelFilter::Info,
-        simplelog::Config::default(),
+        simplelog::ConfigBuilder::new()
+            .set_time_format_rfc3339()
+            .build(),
         simplelog::TerminalMode::Mixed,
         simplelog::ColorChoice::Auto,
-    )?;
+    )
+    .expect("error initializing termlogger");
 
     // Load environment variables
-    let api_id = std::env::var("API_ID")?.parse()?;
-    let api_hash = std::env::var("API_HASH")?;
-    let bot_token = std::env::var("BOT_TOKEN")?;
+    let api_id = std::env::var("API_ID")
+        .context("API_ID env is not set")?
+        .parse()?;
+    let api_hash = std::env::var("API_HASH").context("API_HASH env is not set")?;
+    let bot_token = std::env::var("BOT_TOKEN").context("BOT_TOKEN env is not set")?;
 
     // Fill in the configuration and connect to Telegram
     static RECONNECTION_POLICY: &dyn ReconnectionPolicy = &FixedReconnect {
