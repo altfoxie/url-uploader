@@ -48,25 +48,26 @@ impl Bot {
     }
 
     /// Run the bot.
-    pub async fn run(self: Arc<Self>) -> Result<()> {
-        while let Some(update) = tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("Received Ctrl+C, exiting");
-                Ok(None)
-            }
-            update = self.client.next_update() => update
-        }? {
-            let self_ = self.clone();
-
-            // Spawn a new task to handle the update
-            tokio::spawn(async move {
-                if let Err(err) = self_.handle_update(update).await {
-                    error!("Error handling update: {}", err);
+    pub async fn run(self: Arc<Self>) {
+        loop {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Received Ctrl+C, exiting");
+                    break;
                 }
-            });
-        }
 
-        Ok(())
+                Ok(update) = self.client.next_update() => {
+                    let self_ = self.clone();
+
+                    // Spawn a new task to handle the update
+                    tokio::spawn(async move {
+                        if let Err(err) = self_.handle_update(update).await {
+                            error!("Error handling update: {}", err);
+                        }
+                    });
+                }
+            }
+        }
     }
 
     /// Update handler.
