@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use bot::Bot;
 use dotenv::dotenv;
-use grammers_client::{Client, Config};
+use grammers_client::{Client, Config, InitParams};
+use grammers_mtsender::{FixedReconnect, ReconnectionPolicy};
 use grammers_session::Session;
 use log::info;
 use simplelog::TermLogger;
@@ -28,11 +31,18 @@ async fn main() -> Result<()> {
     let bot_token = std::env::var("BOT_TOKEN")?;
 
     // Fill in the configuration and connect to Telegram
+    static RECONNECTION_POLICY: &dyn ReconnectionPolicy = &FixedReconnect {
+        attempts: 3,
+        delay: Duration::from_secs(5),
+    };
     let config = Config {
         api_id,
         api_hash: api_hash.clone(),
         session: Session::load_file_or_create("session.bin")?,
-        params: Default::default(),
+        params: InitParams {
+            reconnection_policy: RECONNECTION_POLICY,
+            ..Default::default()
+        },
     };
     let client = Client::connect(config).await?;
 
@@ -47,7 +57,7 @@ async fn main() -> Result<()> {
 
     // Create the bot and run it
     let bot = Bot::new(client).await?;
-    bot.run().await?;
+    bot.run().await;
 
     Ok(())
 }
